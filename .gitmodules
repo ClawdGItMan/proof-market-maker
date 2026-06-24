@@ -1,0 +1,3 @@
+[submodule "vendor/trading-sdk"]
+	path = vendor/trading-sdk
+	url = https://github.com/Proof-labs/trading-sdk

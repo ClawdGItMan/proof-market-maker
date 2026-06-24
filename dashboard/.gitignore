@@ -1,0 +1,23 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# next
+.next/
+out/
+build/
+next-env.d.ts
+
+# secrets — NEVER commit. DASHBOARD_CONTROL_SECRET lives here only.
+.env
+.env.local
+.env.*.local
+
+# misc
+*.log
+.DS_Store
+
+# typescript build info
+*.tsbuildinfo
+.vercel

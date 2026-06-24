@@ -1,0 +1,34 @@
+# systemd unit for the read-only ops dashboard (ELO-24 — folded onto the bot host).
+#
+# Installed + enabled by deploy/bootstrap.sh; you normally do not copy this by hand.
+# Runs the Next.js dashboard (built with `next build`) under `next start`, bound to
+# LOCALHOST ONLY (127.0.0.1:3100). It is NOT publicly exposed.
+#
+# Reach it one of two ways (see deploy/aws/AWS-PROVISION.md):
+#   - SSH tunnel (default):  ssh -L 3100:127.0.0.1:3100 <host>  then open http://localhost:3100
+#   - Public HTTPS (opt-in): set DASHBOARD_DOMAIN at provision time → Caddy fronts it with TLS.
+#
+# Server-only secrets (operator Basic-Auth creds, DASHBOARD_CONTROL_SECRET, Supabase
+# anon key) live in the gitignored dashboard/.env.local, loaded by next at runtime —
+# never baked into this unit. The Supabase service-role key is NOT here; it stays inside
+# the Supabase Edge Function (ELO-13 trust boundary, unchanged).
+[Unit]
+Description=Proof MM Ops Dashboard (read-only + kill-switch)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proofmm
+WorkingDirectory=/opt/proof-market-maker/dashboard
+# Bind to loopback (-H 127.0.0.1) so the dashboard is never served on a public
+# interface by default. `npm run start` is `next start -p 3100`; the `--` forwards
+# the explicit hostname flag to it. This binding is a security property — keep it explicit.
+ExecStart=/usr/bin/npm run start -- -H 127.0.0.1
+Restart=always
+RestartSec=2
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# Secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.key
+secrets/
+
+# Node
+node_modules/
+dist/
+build/
+*.log
+.next/
+
+# Deploy / platform artifacts
+.vercel/
+
+# Key material (in addition to *.key above)
+*.pem
+
+# Local QA / tooling artifacts (screenshots, traces)
+*.png
+*.jpg
+*.jpeg
+.playwright-mcp/
+
+# Local bot state (durable nonce/order journal)
+data/
+*.sqlite
+*.sqlite-journal
+
+# Disposable intermediate files
+.tmp/

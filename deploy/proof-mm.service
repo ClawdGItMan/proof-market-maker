@@ -1,0 +1,33 @@
+# systemd unit for the always-on market maker (ELO-10).
+#
+#   sudo cp deploy/proof-mm.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now proof-mm
+#   journalctl -u proof-mm -f
+#
+# Auto-restarts on crash; on restart the bot reconciles orphan orders before
+# quoting. Requires NTP-synced host clock (the engine uses timestamp nonces):
+#   sudo timedatectl set-ntp true && timedatectl status
+#
+# Edit User= and the WorkingDirectory path for your deployment. Secrets stay in
+# the gitignored .env (loaded by tsx --env-file), never in this unit file.
+[Unit]
+Description=Proof Market Maker (paper-trading)
+After=network-online.target time-sync.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=proofmm
+WorkingDirectory=/opt/proof-market-maker
+ExecStart=/usr/bin/npm run bot -- 1
+Restart=always
+RestartSec=2
+# Allow bot.ts to catch SIGINT and flatten quotes before exit.
+KillSignal=SIGINT
+TimeoutStopSec=15
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

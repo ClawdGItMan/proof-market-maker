@@ -1,0 +1,17 @@
+# Caddy reverse-proxy template for the OPTIONAL public-HTTPS dashboard path (ELO-24).
+# Rendered by deploy/bootstrap.sh (step 8) only when DASHBOARD_DOMAIN is set:
+#   {{DOMAIN}} -> your dashboard hostname, {{EMAIL}} -> Let's Encrypt account email.
+#
+# Caddy terminates TLS (auto-provisioned + auto-renewed) and proxies to the
+# loopback-bound Next.js dashboard. The operator HTTP Basic-Auth credential is
+# still enforced inside the Next.js app (ELO-17 fail-closed) — Caddy only adds
+# the TLS layer that the raw EC2 box lacks, so the Basic-Auth header is never
+# sent in clear text. Without this file the dashboard stays loopback-only.
+{
+	email {{EMAIL}}
+}
+
+{{DOMAIN}} {
+	encode zstd gzip
+	reverse_proxy 127.0.0.1:3100
+}

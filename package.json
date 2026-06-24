@@ -1,0 +1,33 @@
+{
+  "name": "proof-market-maker",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Market maker for Proof.trade — through P2 hardening: reliability, kill-switch, crash recovery, always-on deploy (ELO-10).",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "sdk:install": "npm --prefix vendor/trading-sdk install --no-audit --no-fund",
+    "sdk:build": "npm --prefix vendor/trading-sdk run build",
+    "setup": "npm run sdk:install && npm run sdk:build",
+    "probe": "tsx --env-file=.env src/probe.ts",
+    "spike": "tsx --env-file=.env src/spike.ts",
+    "bot": "tsx --env-file=.env src/bot.ts",
+    "killswitch": "tsx --env-file=.env src/killswitch.ts",
+    "demo:resync": "tsx --env-file=.env src/demoResync.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "pino-pretty": "^11.3.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.9"
+  },
+  "dependencies": {
+    "pino": "^9.14.0",
+    "zod": "^3.24.1"
+  }
+}

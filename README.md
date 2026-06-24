@@ -1,143 +1,61 @@
 # Proof Market Maker
 
-Market-making bot for [Proof.trade](https://proof.trade) (paper-trading competition).
-See architecture: **ELO-3 §4–5**. This repo contains the **P0 spike (ELO-8)** —
-the proof that the SDK wire works end-to-end — the **P1 paper-trading MVP
-(ELO-9)**: a bot that quotes both sides on devnet paper, manages inventory at a
-basic level, and cleanly resyncs after a socket drop — and the **P2 hardening
-(ELO-10)**: a two-tier kill-switch, frozen-feed watchdog, rate-limit throttle,
-crash-recovery journal with orphan reconcile-on-restart, and always-on
-supervisor configs (pm2 / systemd / Docker).
+An automated trading bot that **makes markets** on [Proof.trade](https://proof.trade) — currently running on a **paper-trading** competition (play money, no real funds at risk).
 
-## Layout
+## What does it actually do?
 
-```
-src/
-  config.ts            env loading + Zod validation (secrets from env only)
-  logger.ts            pino structured logs (BigInt-safe, secret-redacting)
-  sdkAdapter.ts        THE one file that imports the Proof SDK (blast-radius isolation)
-  orderbookStream.ts   live /ws client (the SDK's stream layer is broken vs devnet — see below)
-  schemas.ts           Zod schemas for inbound WS frames; coerces wire ints -> BigInt
-  book.ts              LocalBook: rebuild L2 book from snapshot + deltas
-  nonceManager.ts      persistent, monotonic nonce high-water mark + SDK-safety gate
-  diff.ts              pure desired-vs-resting diff -> Place / Cancel / CancelReplace
-  strategy.ts          Strategy interface (§2) + FixedSpreadStrategy (inventory skew/cap)
-  orderTracker.ts      order lifecycle (submitted->resting->filled/cancelled) + fill inference
-  executor.ts          applies diff actions via the adapter; nonce gate; rate-limit; kill-switch
-  bot.ts               MarketMaker runtime: stream -> quote -> diff -> execute, resync + hardening
-  killControl.ts       two-tier kill-switch (run/soft/hard) via a local control file (ELO-10)
-  staleWatchdog.ts     frozen-feed detector: silent socket -> stale -> pull quotes (ELO-10)
-  tokenBucket.ts       rate-limit throttle for order submission (ELO-10)
-  journal.ts           append-only crash-recovery journal + orphan-order reconcile (ELO-10)
-  killswitch.ts        CLI: atomic cancel-all + drive the two-tier control file
-  demoResync.ts        scripted proof: quote -> force drop -> resync -> re-quote -> flatten
-  probe.ts             read-only connectivity + live-book check (places nothing)
-  spike.ts             full E2E: connect -> stream -> place -> rest -> cancel -> latency
-  cleanup.ts           safety: cancel all resting orders for our wallet
-  *.test.ts            vitest units: nonceManager, diff, tokenBucket, killControl, staleWatchdog, journal
-deploy/                always-on supervisor configs: pm2, systemd, Docker + ops runbook (ELO-10)
-vendor/trading-sdk     git submodule, pinned @ 634f84b7 (the Proof SDK)
-data/nonce.state       persisted nonce high-water mark (gitignored, created at runtime)
-data/control           two-tier kill-switch mode (gitignored, run/soft/hard)
-data/journal.jsonl     crash-recovery journal of order intents (gitignored)
-```
+A **market maker** is a trader who is always willing to both buy *and* sell. Instead of betting on which way the price goes, it posts a price to buy slightly below the current price and a price to sell slightly above it, then earns the small gap in between (the "spread") each time someone trades against it.
 
-## Setup & run
+This bot does that automatically, around the clock:
+
+- 📈 **Quotes both sides** of a market (e.g. BTC) continuously, adjusting its prices as the market moves.
+- ⚖️ **Manages its inventory** — if it ends up holding too much of one side, it leans its prices to sell that position back down, so it stays balanced rather than taking a big directional bet.
+- 🔌 **Heals itself** when its connection to the exchange drops — it pauses, re-syncs, and picks back up without leaving stray orders behind.
+- 🛑 **Has a panic button.** A two-stage kill switch lets an operator instantly pause quoting, or flatten everything and stand down, in one command.
+
+It's built to run unattended and survive the messy realities of a live exchange — dropped connections, frozen data feeds, rate limits, and crashes.
+
+## Is any real money involved?
+
+**No.** It trades on Proof.trade's **development network** with paper (fake) money, as part of a trading competition. Think of it as a flight simulator for a trading strategy. No real funds, wallets, or customer money touch this code.
+
+## Is it safe to make public? (no secrets here)
+
+Yes. This repository contains **only code** — no passwords, no API keys, no wallet keys. The bot reads all its secrets from a private `.env` file on the machine it runs on, which is never included here. The `.env.example` files show the *names* of the settings with blank values, so you can see what's required without ever seeing a real secret.
+
+## Want to try it yourself?
+
+You'll need [Node.js](https://nodejs.org) installed. Then:
 
 ```bash
-npm install                 # root deps (zod, pino, tsx, vitest, typescript)
-git submodule update --init # fetch the pinned SDK
-npm run setup               # install + build the vendored SDK to dist/
-cp .env.example .env        # then fill PROOF_PRIVATE_KEY / PROOF_ADDRESS (gitignored)
+npm install                  # install dependencies
+git submodule update --init  # fetch the exchange's SDK
+npm run setup                # build the SDK
 
-npm run probe               # read-only: health, markets, live top-of-book
-npm run spike               # places ONE post-only order far from mid and cancels it
-npm run bot -- 1            # run the market maker on market 1 (BTC); Ctrl-C flattens
-npm run demo:resync -- 1    # scripted: quote -> force socket drop -> resync -> re-quote -> flatten
-npm run killswitch          # panic button: atomic cancel-all (optionally `-- <market>`)
-npm run killswitch -- soft  # pause quoting, keep resting orders (two-tier, ELO-10)
-npm run killswitch -- hard  # flatten + idle until cleared
-npm run killswitch -- run   # resume normal quoting
-npm run cleanup             # cancel any stray resting orders (iterative)
-npm test                    # vitest units (nonce, diff, + ELO-10 reliability primitives)
-npm run typecheck
+cp .env.example .env         # then fill in your paper-trading wallet details
 ```
 
-Set `PINO_PRETTY=1` for human-readable logs; default is structured JSON.
-Tunables (env): `MM_SPREAD_BPS`, `MM_QUOTE_SIZE`, `MM_MAX_INVENTORY`,
-`MM_SKEW_BPS`, `MM_REQUOTE_MS`. Reliability knobs (ELO-10): `MM_STALE_MS`,
-`MM_RATE_BURST`, `MM_RATE_PER_SEC`, `MM_CONTROL_FILE`, `MM_JOURNAL`.
+Once set up, the most useful commands are:
 
-**Always-on deploy:** see [`deploy/README.md`](deploy/README.md) for pm2 / systemd /
-Docker supervisor setup, NTP requirement, durable `data/` state, and the
-two-tier kill-switch operations guide.
-
-## P1 design notes (ELO-9)
-
-- **Nonce manager.** The SDK owns nonce allocation internally (timestamp
-  `max(now, last+1)`, in-memory, resets to 0 on restart) with no injection hook.
-  The only cross-restart hazard is a future-dated burst followed by a fast
-  restart. `NonceManager` persists a high-water mark and **gates each submit
-  until wall-clock passes it**, so the SDK's own allocator can never regress
-  below a burned nonce — without reinventing the SDK's signing/commit path.
-- **Resting truth.** Quoting reconciles against `queryOpenOrders` (the
-  exchange's authoritative resting set) each tick, not against the local book —
-  the book drives *pricing*, open-orders drive *what to cancel/replace*.
-- **Resync.** On a socket drop the book is marked stale, quotes are pulled
-  (kill-switch), and quoting halts until a fresh snapshot re-syncs the book.
-  `npm run demo:resync` proves the full cycle live and flattens afterwards.
-
-Secrets are loaded from `.env` via `node --env-file` only and never logged.
-
-## P2 hardening notes (ELO-10)
-
-Production-grade reliability layered onto the P1 runtime. Each primitive is a
-small, pure/IO-isolated module with its own unit tests:
-
-- **Two-tier kill-switch** (`killControl.ts`). The bot polls a local control file
-  every tick. `soft` = stop placing new quotes but leave resting orders alone
-  (a quiet pause); `hard` = atomic cancel-all then idle in-process (so the
-  supervisor doesn't thrash-restart) until an operator sets `run`. Reachable via
-  `npm run killswitch -- soft|hard|run` or a bare `echo hard > data/control`.
-- **Frozen-feed watchdog** (`staleWatchdog.ts`). The P1 resync only fires on an
-  *explicit* socket close. A socket can stay open while updates silently stop —
-  just as dangerous. Every book frame feeds the watchdog; if the feed goes quiet
-  past `MM_STALE_MS`, the book is marked stale and quotes are pulled, exactly
-  like a real drop.
-- **Rate-limit throttle** (`tokenBucket.ts`). Order submission passes through a
-  token bucket (`MM_RATE_BURST` / `MM_RATE_PER_SEC`) so a requote storm can't
-  trip the gateway's `429` throttling and cascade into reconnect loops.
-- **Crash-recovery journal + orphan reconcile** (`journal.ts`). Order intents are
-  appended to a durable JSONL journal. On restart, `reconcileOnStartup()` cancels
-  any order the exchange still holds that the fresh (empty-tracker) process does
-  not recognise — so **kill process → restart → no orphan orders**. This is the
-  ELO-10 chaos-test criterion, coordinated with QA.
-
-## SDK pinning & blast radius
-
-The Proof SDK is vendored as a **git submodule pinned to commit
-`634f84b7b9cb73de1c8957df75d9971dd16f6876`** (true commit-SHA pinning) and built
-to `dist/`. **`src/sdkAdapter.ts` is the only file that imports it** — a future
-SDK swap/upgrade is a one-file change.
-
-## P0 spike findings (ELO-8)
-
-Confirmed live against `api.dev.proof.trade` (`exchange-devnet-1`). These resolve
-the gated unknowns flagged in ELO-4 (live fees / tick / lot / rate limits):
-
-| Item | Finding |
+| Command | What it does |
 |---|---|
-| Connectivity | Devnet healthy; REST reads + order submit work via the SDK. |
-| **Streaming** | **The SDK's `subscribeOrderbookDeltas` is broken vs this devnet** — it targets `/orderbook-deltas` (404) with a non-matching protocol. The real feed is a single socket at `wss://api.dev.proof.trade/ws`; subscribe with `{"method":"subscribe","params":{"channel":"orderbook","market":N}}`; frames are `snapshot` then `update` (single-level deltas; `totalQuantity:0` removes a level). We talk to it directly in `orderbookStream.ts`. |
-| **Price unit** | **micro-USDC (6dp), not "cents" as the SDK README examples imply.** BTC best bid `62370676584` = `$62,370.68`. Pricing math must use the µUSDC scale. |
-| **Fees (BTC)** | maker **2 bps**, taker **5 bps**. |
-| **Margin (BTC)** | IM **3334 bps** (~3× max leverage), MM **1667 bps**. |
-| **tick / lot** | `tickSize = 0`, `lotSize = 0` on devnet → no price/size granularity gate enforced. |
-| **szDecimals (BTC)** | **5** → quantity is in 10⁻⁵ contracts (`qty=160` = 0.0016 BTC ≈ $100 notional). |
-| Nonce lifecycle | Timestamp nonces (`max(now_ms, last+1)`), allocated by the SDK, burned on commit. No pre-sync needed. Observed `recent-nonces` count increment per tx. |
-| **Commit latency** | **≈ 750–770 ms** per action (`submitTxCommit` = CheckTx-sync + poll `/tx` for DeliverTx). |
-| Order events | `submitTxCommit` returns ABCI events; `order_placed` (snake_case) carries `order_id`. Open orders also expose the id via `queryOpenOrders`. |
-| Rate limits | 20 rapid REST reads: 0 failures, ~12 ms/req, no `429`. Gateway surfaces throttling as `code:429`. Submit-side limits not yet hit at spike volume — to characterise under MM load in P2. |
+| `npm run probe` | Read-only health check — looks at the live market, places nothing. |
+| `npm run bot -- 1` | Runs the market maker on market #1 (BTC). Press Ctrl-C to stop and clean up. |
+| `npm run killswitch` | The panic button — instantly cancels all open orders. |
+| `npm run demo:resync` | A scripted demo: quote → force a connection drop → recover → keep going. |
 
-### Markets
-1323 markets on devnet; market `1` = BTC, `3` = SOL, `4` = WTI, `6` = NVDA, `7` = HYPE, etc.
+> **Always-on deployment** (running it 24/7 on a server) is covered in [`deploy/README.md`](deploy/README.md).
+
+## For developers
+
+The deeper engineering detail — architecture, the exchange's wire protocol findings, the nonce/ordering safety model, the reliability primitives (kill switch, watchdog, rate limiter, crash-recovery journal), and how the SDK is pinned — lives in [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
+
+A quick map of the code:
+
+- `src/bot.ts` — the main loop: read the market → decide quotes → place/cancel orders → recover from drops.
+- `src/strategy.ts` — the pricing strategy (spread, inventory skew, position caps).
+- `src/sdkAdapter.ts` — the single file that talks to the Proof exchange SDK.
+- `src/killControl.ts`, `staleWatchdog.ts`, `tokenBucket.ts`, `journal.ts` — the safety/reliability layer.
+- `deploy/` — supervisor configs (pm2 / systemd / Docker) for always-on running.
+
+Run `npm test` for the unit tests and `npm run typecheck` for type checking.

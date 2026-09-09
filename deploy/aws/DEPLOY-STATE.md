@@ -2,15 +2,15 @@
 
 Provisioned 2026-06-24. The always-on paper-trading bot runs here.
 
-## Resources (us-east-1, account 288507842136)
-- EC2 instance: `i-015c7fb9142edf529` (t3.micro, Ubuntu 24.04, AMI ami-0f8a61b66d1accaee)
+## Resources (us-east-1, account <aws-account-id>)
+- EC2 instance: `<instance-id>` (t3.micro, Ubuntu 24.04, AMI am<instance-id>)
 - Key pair: `proof-mm` (private key at operator `~/.ssh/proof-mm.pem`)
-- Security group: `sg-0b98de26a7b2e933f` — inbound 22 from operator IP only; dashboard NOT exposed (stays on Vercel)
+- Security group: `<security-group-id>` — inbound 22 from operator IP only; dashboard NOT exposed (stays on Vercel)
 - App dir: `/opt/proof-market-maker`, service user `proofmm`
 - systemd unit: `proof-mm.service` (enabled, Restart=always, After=time-sync.target)
 
 ## Cost guardrail
-- AWS Budget `proof-mm-monthly-50` — $50/mo, email alerts to max.allaire@gmail.com
+- AWS Budget `proof-mm-monthly-50` — $50/mo, email alerts to <alert-email>
   at 50% / 80% (ACTUAL) and 100% (FORECASTED).
 
 ## Verified
@@ -18,7 +18,7 @@ Provisioned 2026-06-24. The always-on paper-trading bot runs here.
 - Reboot survival: `sudo systemctl reboot` → new boot_id, service auto-started (enabled), resumed quoting
   (single clean "two-sided quoting started", no crash loop). NTP showed `no` for a few seconds at boot
   then converged within ~45s via chrony; zero nonce/timestamp/clock errors in the post-boot journal.
-- Current public IP (ephemeral, no Elastic IP): 100.53.12.24 — re-query on each reboot/stop;
+- Current public IP (ephemeral, no Elastic IP): <public-ip> — re-query on each reboot/stop;
   the SSH security-group rule is pinned to the operator IP, not the instance IP.
 
 ## Operate

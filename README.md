@@ -46,6 +46,8 @@ Once set up, the most useful commands are:
 
 > **Always-on deployment** (running it 24/7 on a server) is covered in [`deploy/README.md`](deploy/README.md).
 
+> **Ops dashboard** (live PnL, inventory, feed health and the kill switch in a browser) is the `dashboard/` folder here, also published on its own as [ClawdGItMan/proof-ops-dashboard](https://github.com/ClawdGItMan/proof-ops-dashboard).
+
 ## For developers
 
 The deeper engineering detail — architecture, the exchange's wire protocol findings, the nonce/ordering safety model, the reliability primitives (kill switch, watchdog, rate limiter, crash-recovery journal), and how the SDK is pinned — lives in [`docs/TECHNICAL.md`](docs/TECHNICAL.md).
